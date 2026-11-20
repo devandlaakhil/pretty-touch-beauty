@@ -21,7 +21,7 @@ Uploaded images are stored as MongoDB documents and limited to 2 MB per image. A
 
 ### Deploying to Vercel
 
-The root `api/index.js` function and `vercel.json` rewrite route `/api/*` requests to the Express API. Add `MONGODB_URI` (pointing at `prettyBeaty`) to the Vercel project's Environment Variables; local `.env` values are not automatically uploaded to Vercel. Vercel's production environment keeps admin routes disabled.
+The root `api/handler.js` function and `vercel.json` rewrite route `/api/*` requests to the Express API. Add `MONGODB_URI` (pointing at `prettyBeaty`) to the Vercel project's Environment Variables; local `.env` values are not automatically uploaded to Vercel. Vercel's production environment keeps admin routes disabled.
 
 ## WhatsApp and Instagram setup
 
