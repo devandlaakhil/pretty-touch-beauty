@@ -4,4 +4,49 @@
 @media(min-width:761px) and (max-width:1000px){.nav{gap:17px}.hero{gap:20px}.hero h1{font-size:58px}.contact-section{padding-left:5%;padding-right:5%}}
 .field select,.appointment-row select{width:100%;border:1px solid #eadfe2;border-radius:8px;padding:11px 12px;background:#fffdfd;color:#46353b;font:inherit;font-size:12px;outline:none}.field select:focus,.appointment-row select:focus{border-color:#c77a91;box-shadow:0 0 0 3px #f8e9ed}.appointments-list{display:grid;gap:12px;margin-top:18px}.appointment-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px;border:1px solid #f1e7e9;border-radius:10px;background:#fffdfd}.appointment-info{display:grid;gap:5px;font-size:12px}.appointment-info>b{font-family:'Playfair Display',serif;font-size:17px}.appointment-info a{color:#a9506b;text-decoration:none}.appointment-info span,.appointment-info time,.appointment-info small{color:#8e7a81;font-size:11px}.appointment-row select{width:auto;min-width:130px;text-transform:capitalize}.category-book svg:first-child{margin-right:1px}
 @media(max-width:760px){.appointment-row{align-items:flex-start;flex-direction:column;gap:12px}.appointment-row select{width:100%}}
-.admin-entry:disabled{opacity:.35;cursor:not-allowed}.service-extra{display:block;color:#9b888e;font-size:10px;line-height:1.5;margin-top:4px}
+.service-extra{display:block;color:#9b888e;font-size:10px;line-height:1.5;margin-top:4px}
+.appointment-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0}
+.appointment-stats>div{background:#f9edf0;padding:17px;border-radius:12px}
+.appointment-stats span,.appointment-stats b{display:block}
+.appointment-stats span{font-size:11px;color:#947d85}
+.appointment-stats b{font:600 27px 'Playfair Display',serif;color:#a9506b;margin-top:5px}
+.appointment-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.appointment-row.completed .appointment-info>*{text-decoration:line-through}
+.appointment-row.completed .appointment-info{opacity:.72}
+.appointment-date-group+.appointment-date-group{margin-top:24px}
+.appointment-date-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;background:#f9edf0;border-radius:10px}
+.appointment-date-heading h3{font:600 17px 'Playfair Display',serif;color:#563d46;margin:0}
+.appointment-date-heading span{font-size:10px;color:#947d85}
+.password-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}
+.password-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end}
+.booking-whatsapp-note{grid-column:1/-1;margin:0;color:#8e7a81;font-size:11px;line-height:1.6}
+@media(max-width:760px){.appointment-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.appointment-actions{width:100%}.appointment-actions select{flex:1}.password-form{grid-template-columns:1fr}.password-form-actions{grid-column:auto}}
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #ead9de;border-radius:20px;background:#fff;color:#8e6875;padding:8px 11px;font-size:10px;font-weight:700;white-space:nowrap}
+.remove-photo-btn{white-space:nowrap}
+@media(max-width:760px){.theme-toggle{order:2;margin-left:auto}.menu-toggle{order:3}}
+:root[data-theme=dark]{color-scheme:dark;background:#191618;color:#f2e8ec}
+:root[data-theme=dark] body{background:#191618;color:#f2e8ec}
+:root[data-theme=dark] .header,:root[data-theme=dark] .floating-note,:root[data-theme=dark] .category-card,:root[data-theme=dark] .admin-panel,:root[data-theme=dark] .modal,:root[data-theme=dark] .outline-btn,:root[data-theme=dark] .upload-btn,:root[data-theme=dark] .appointment-row,:root[data-theme=dark] .theme-toggle{background:#241e21;color:#f2e8ec;border-color:#493941}
+:root[data-theme=dark] .nav{background:#241e21;border-color:#493941}
+:root[data-theme=dark] .nav a,:root[data-theme=dark] .nav-book{color:#f2e8ec}
+:root[data-theme=dark] .services-section{background:#1e1a1c}
+:root[data-theme=dark] .contact-section{background:#2d2227}
+:root[data-theme=dark] .hero-image{background:linear-gradient(145deg,#453139,#332a2d)}
+:root[data-theme=dark] .hero-circle{border-color:#5a414a}
+:root[data-theme=dark] .about-photo,:root[data-theme=dark] .category-icon,:root[data-theme=dark] .service-thumb,:root[data-theme=dark] .mini-service-img,:root[data-theme=dark] .photo-placeholder,:root[data-theme=dark] .image-upload-preview>div{background:#33272c}
+:root[data-theme=dark] .hero h1,:root[data-theme=dark] .section-heading h2,:root[data-theme=dark] .about-copy h2,:root[data-theme=dark] .contact-section h2,:root[data-theme=dark] .admin-head h1,:root[data-theme=dark] .panel-title h2,:root[data-theme=dark] .manage-cat-title h3,:root[data-theme=dark] .category-head h3,:root[data-theme=dark] .appointment-date-heading h3,:root[data-theme=dark] .modal-head h2,:root[data-theme=dark] .service-info b,:root[data-theme=dark] .floating-note b{color:#f2e8ec}
+:root[data-theme=dark] .hero-copy>p,:root[data-theme=dark] .section-heading p,:root[data-theme=dark] .about-copy p,:root[data-theme=dark] .contact-section p,:root[data-theme=dark] .hero-trust,:root[data-theme=dark] .footer p,:root[data-theme=dark] .admin-head p,:root[data-theme=dark] .panel-title p,:root[data-theme=dark] .appointment-info span,:root[data-theme=dark] .appointment-info time,:root[data-theme=dark] .appointment-info small,:root[data-theme=dark] .appointment-date-heading span,:root[data-theme=dark] .muted,:root[data-theme=dark] .service-info p,:root[data-theme=dark] .service-extra{color:#b9a8af}
+:root[data-theme=dark] .nav a,:root[data-theme=dark] .text-link,:root[data-theme=dark] .appointment-info a{color:#e6bdca}
+:root[data-theme=dark] .service-item,:root[data-theme=dark] .category-head,:root[data-theme=dark] .manage-cat-title,:root[data-theme=dark] .manage-row,:root[data-theme=dark] .admin-tabs{border-color:#3a3035}
+:root[data-theme=dark] .filter,:root[data-theme=dark] .category-book,:root[data-theme=dark] .small-add,:root[data-theme=dark] .icon-btn,:root[data-theme=dark] .socials a,:root[data-theme=dark] .socials button{background:#33272c;color:#e6bdca;border-color:#493941}
+:root[data-theme=dark] .filter.active,:root[data-theme=dark] .filter:hover{background:#b65e78;color:#fff;border-color:#b65e78}
+:root[data-theme=dark] .category-book:hover{background:#49343c}
+:root[data-theme=dark] .stats>div,:root[data-theme=dark] .appointment-stats>div,:root[data-theme=dark] .appointment-date-heading{background:#30252a}
+:root[data-theme=dark] .stats span,:root[data-theme=dark] .appointment-stats span{color:#c6aeb8}
+:root[data-theme=dark] .field label{color:#decbd2}
+:root[data-theme=dark] .field input,:root[data-theme=dark] .field textarea,:root[data-theme=dark] .field select,:root[data-theme=dark] .appointment-row select{background:#1d191b;color:#f2e8ec;border-color:#493941}
+:root[data-theme=dark] .field input::placeholder,:root[data-theme=dark] .field textarea::placeholder{color:#9e8d94}
+:root[data-theme=dark] .admin-tabs button{color:#b9a8af}
+:root[data-theme=dark] .admin-tabs button.active{color:#f0b7c8}
+:root[data-theme=dark] .admin-note{background:#332b20;color:#e4d4b8}
+:root[data-theme=dark] .admin-entry{background:#241e21;color:#e6bdca;border-color:#493941}

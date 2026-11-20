@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     Instagram, MessageCircle, Menu, X, Sparkles, Heart, Flower2, Plus, Pencil, Trash2,
     Camera, LogOut, LayoutDashboard, ArrowUpRight, Phone, MapPin, Clock, Check, Upload,
-    CalendarDays
+    CalendarDays, KeyRound, Sun, Moon
 } from 'lucide-react';
 import { defaultCategories, defaultProfile } from './defaults.js';
 
@@ -45,17 +45,32 @@ function mapService(service) {
 }
 
 function App() {
+    const [theme, setTheme] = useState(() => {
+        try {
+            return localStorage.getItem('pretty-touch-theme') === 'dark' ? 'dark' : 'light';
+        } catch (error) {
+            console.warn('Could not read the saved theme preference.', error);
+            return 'light';
+        }
+    });
     const [profile, setProfile] = useState(defaultProfile);
     const [categories, setCategories] = useState(defaultCategories);
     const [contentReady, setContentReady] = useState(false);
     const [active, setActive] = useState('all');
     const [admin, setAdmin] = useState(false);
     const [logged, setLogged] = useState(false);
+    const [adminConfigured, setAdminConfigured] = useState(null);
+    const [adminScreen, setAdminScreen] = useState('dashboard');
     const [mobileMenu, setMobileMenu] = useState(false);
     const [modal, setModal] = useState(null);
     const [draft, setDraft] = useState(null);
     const [categoryDraft, setCategoryDraft] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [setupPassword, setSetupPassword] = useState('');
+    const [confirmSetupPassword, setConfirmSetupPassword] = useState('');
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
     const [booking, setBooking] = useState(null);
     const [appointments, setAppointments] = useState([]);
     const [toast, setToast] = useState('');
@@ -69,6 +84,15 @@ function App() {
         const result = await api('/api/appointments');
         setAppointments(result);
     };
+
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+        try {
+            localStorage.setItem('pretty-touch-theme', theme);
+        } catch (error) {
+            console.warn('Could not save the theme preference.', error);
+        }
+    }, [theme]);
 
     useEffect(() => {
         let cancelled = false;
@@ -87,18 +111,24 @@ function App() {
             .catch(error => {
                 if (!cancelled) notify(`Could not load salon data: ${error.message}`);
             });
-        if (!import.meta.env.PROD) {
-            api('/api/auth/me')
-                .then(() => {
-                    if (cancelled) return;
-                    setLogged(true);
-                    setAdmin(true);
-                    loadAppointments().catch(error => notify(error.message));
-                })
-                .catch(error => {
-                    if (!cancelled && error.status !== 401) notify(error.message);
-                });
-        }
+        api('/api/auth/me')
+            .then(() => {
+                if (cancelled) return;
+                setLogged(true);
+                setAdmin(true);
+                setAdminScreen('dashboard');
+                loadAppointments().catch(error => notify(error.message));
+            })
+            .catch(error => {
+                if (!cancelled && error.status !== 401) notify(error.message);
+            });
+        api('/api/auth/status')
+            .then(result => {
+                if (!cancelled) setAdminConfigured(result.configured);
+            })
+            .catch(error => {
+                if (!cancelled) notify(`Could not check admin setup: ${error.message}`);
+            });
         return () => { cancelled = true; };
     }, []);
 
@@ -121,6 +151,28 @@ function App() {
         }))),
         [categories]
     );
+    const appointmentCounts = useMemo(() => ({
+        pending: appointments.filter(item => item.status === 'pending').length,
+        confirmed: appointments.filter(item => item.status === 'confirmed').length,
+        completed: appointments.filter(item => item.status === 'completed').length,
+        cancelled: appointments.filter(item => item.status === 'cancelled').length
+    }), [appointments]);
+    const appointmentDateGroups = useMemo(() => {
+        const groups = new Map();
+        appointments.forEach(appointment => {
+            const date = new Date(appointment.date);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    label: date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+                    items: []
+                });
+            }
+            groups.get(key).items.push(appointment);
+        });
+        return Array.from(groups.values());
+    }, [appointments]);
     const visible = active === 'all' ? categories : categories.filter(category => category.id === active);
 
     const wa = message => {
@@ -147,14 +199,85 @@ function App() {
 
     const submitBooking = async event => {
         event.preventDefault();
+        const number = String(profile.whatsapp || profile.phone || '').replace(/\D/g, '');
+        const whatsappUrl = number.length >= 8 && number.length <= 15
+            ? `https://wa.me/${number}?text=${encodeURIComponent([
+                `New appointment request - ${profile.brand}`,
+                `Name: ${booking.customerName.trim()}`,
+                `Phone: ${booking.phone.trim()}`,
+                `Service: ${booking.service}`,
+                `Date/time: ${new Date(booking.date).toLocaleString()}`,
+                booking.notes.trim() ? `Notes: ${booking.notes.trim()}` : ''
+            ].filter(Boolean).join('\n'))}`
+            : '';
+        const whatsappWindow = whatsappUrl ? window.open('about:blank', '_blank') : null;
         try {
-            await api('/api/appointments', {
+            const result = await api('/api/appointments', {
                 method: 'POST',
                 body: JSON.stringify({ ...booking, date: new Date(booking.date).toISOString() })
             });
             setModal(null);
-            notify('Appointment request sent. We will be in touch soon.');
+            if (whatsappUrl) {
+                if (whatsappWindow) {
+                    whatsappWindow.opener = null;
+                    whatsappWindow.location.replace(whatsappUrl);
+                } else {
+                    window.location.assign(whatsappUrl);
+                }
+                notify(`${result.message} Send the prepared WhatsApp message to confirm.`);
+            } else {
+                notify(`${result.message} Add the admin WhatsApp number with country code in Admin → Profile.`);
+            }
         } catch (error) {
+            whatsappWindow?.close();
+            notify(error.message);
+        }
+    };
+
+    const openAdmin = async () => {
+        if (logged) {
+            setAdmin(true);
+            return;
+        }
+        let configured = adminConfigured;
+        if (configured === null) {
+            try {
+                const result = await api('/api/auth/status');
+                configured = result.configured;
+                setAdminConfigured(configured);
+            } catch (error) {
+                notify(error.message);
+                return;
+            }
+        }
+        setModal(configured ? 'login' : 'setup');
+    };
+
+    const setupAdmin = async event => {
+        event.preventDefault();
+        if (setupPassword !== confirmSetupPassword) {
+            notify('The passwords do not match.');
+            return;
+        }
+        try {
+            await api('/api/auth/setup', {
+                method: 'POST',
+                body: JSON.stringify({ password: setupPassword })
+            });
+            setAdminConfigured(true);
+            setSetupPassword('');
+            setConfirmSetupPassword('');
+            setLogged(true);
+            setAdmin(true);
+            setAdminScreen('dashboard');
+            setModal(null);
+            await loadAppointments();
+            notify('Admin account created.');
+        } catch (error) {
+            if (error.status === 409) {
+                setAdminConfigured(true);
+                setModal('login');
+            }
             notify(error.message);
         }
     };
@@ -169,8 +292,30 @@ function App() {
             setLoginPassword('');
             setLogged(true);
             setAdmin(true);
+            setAdminConfigured(true);
+            setAdminScreen('dashboard');
             setModal(null);
             await loadAppointments();
+        } catch (error) {
+            notify(error.message);
+        }
+    };
+
+    const changeAdminPassword = async event => {
+        event.preventDefault();
+        if (newPassword !== confirmNewPassword) {
+            notify('The new passwords do not match.');
+            return;
+        }
+        try {
+            const result = await api('/api/auth/password', {
+                method: 'POST',
+                body: JSON.stringify({ currentPassword, newPassword })
+            });
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            notify(result.message);
         } catch (error) {
             notify(error.message);
         }
@@ -197,7 +342,7 @@ function App() {
                 categoryId: draft.categoryId,
                 serviceName: draft.name.trim(),
                 price: draft.price === '' ? null : Number(draft.price),
-                productsUsed: draft.productsUsed || [],
+                productsUsed: String(draft.productsUsed || '').split(/[,\n]/).map(product => product.trim()).filter(Boolean),
                 time: draft.time === '' ? null : Number(draft.time),
                 description: draft.description || '',
                 image: draft.image || ''
@@ -206,6 +351,20 @@ function App() {
                 method: draft.id ? 'PATCH' : 'POST',
                 body: JSON.stringify(payload)
             });
+            const oldPhotos = [...new Set([
+                ...(draft.imagesToDelete || []),
+                ...(draft.originalImage && draft.originalImage !== draft.image ? [draft.originalImage] : [])
+            ])];
+            const photoCleanupErrors = [];
+            for (const photo of oldPhotos) {
+                const imageId = /^\/api\/images\/([a-f\d]{24})(?:\?.*)?$/i.exec(photo)?.[1];
+                if (!imageId) continue;
+                try {
+                    await api(`/api/images/${imageId}`, { method: 'DELETE' });
+                } catch (error) {
+                    photoCleanupErrors.push(error.message);
+                }
+            }
             const service = mapService(saved);
             setCategories(current => current.map(category => category.id === draft.categoryId
                 ? {
@@ -217,7 +376,9 @@ function App() {
                 : category));
             setModal(null);
             setDraft(null);
-            notify('Service saved.');
+            notify(photoCleanupErrors.length
+                ? `Service saved, but a photo could not be deleted: ${photoCleanupErrors[0]}`
+                : 'Service saved.');
         } catch (error) {
             notify(error.message);
         }
@@ -247,11 +408,37 @@ function App() {
 
     const updateProfile = (key, value) => setProfile(current => ({ ...current, [key]: value }));
     const openService = (category, service = null) => {
+        const originalImage = service?.image || '';
         setDraft(service
-            ? { ...service, categoryId: category.id }
-            : { id: '', name: '', description: '', price: '', productsUsed: [], time: '', image: '', categoryId: category.id });
+            ? {
+                ...service,
+                categoryId: category.id,
+                productsUsed: (service.productsUsed || []).join(', '),
+                originalImage,
+                imagesToDelete: []
+            }
+            : {
+                id: '',
+                name: '',
+                description: '',
+                price: '',
+                productsUsed: '',
+                time: '',
+                image: '',
+                categoryId: category.id,
+                originalImage: '',
+                imagesToDelete: []
+            });
         setModal('service');
     };
+    const replaceDraftImage = image => setDraft(current => ({
+        ...current,
+        image,
+        imagesToDelete: current.image && current.image !== current.originalImage
+            ? [...new Set([...(current.imagesToDelete || []), current.image])]
+            : current.imagesToDelete || []
+    }));
+    const removeDraftImage = () => replaceDraftImage('');
     const deleteService = async (categoryId, id) => {
         if (!confirm('Delete this service?')) return;
         try {
@@ -272,6 +459,17 @@ function App() {
                 body: JSON.stringify({ status })
             });
             setAppointments(current => current.map(appointment => appointment._id === id ? updated : appointment));
+        } catch (error) {
+            notify(error.message);
+        }
+    };
+
+    const deleteAppointment = async id => {
+        if (!confirm('Delete this appointment? This cannot be undone.')) return;
+        try {
+            await api(`/api/appointments/${id}`, { method: 'DELETE' });
+            setAppointments(current => current.filter(appointment => appointment._id !== id));
+            notify('Appointment deleted.');
         } catch (error) {
             notify(error.message);
         }
@@ -307,24 +505,34 @@ function App() {
             <button className="menu-toggle" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Toggle menu">
                 {mobileMenu ? <X /> : <Menu />}
             </button>
+            <button
+                className="theme-toggle"
+                onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+                aria-pressed={theme === 'dark'}
+            >{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button>
         </header>
 
         {admin && logged ? <main className="admin-wrap">
             <div className="admin-head">
-                <div><span className="eyebrow">WEBSITE CONTROL CENTRE</span><h1>Manage your salon</h1><p>Update your profile, prices, services, photos and appointments.</p></div>
+                <div><span className="eyebrow">WEBSITE CONTROL CENTRE</span><h1>{adminScreen === 'appointments' ? 'Appointments' : adminScreen === 'security' ? 'Security' : 'Manage your salon'}</h1><p>{adminScreen === 'appointments' ? 'Review appointments grouped by date.' : adminScreen === 'security' ? 'Change your admin sign-in password.' : 'Update your profile, prices, services and photos.'}</p></div>
                 <button className="outline-btn" onClick={logout}><LogOut size={16} /> Exit admin</button>
             </div>
             <div className="admin-tabs">
-                <button className="active"><LayoutDashboard size={16} /> Dashboard</button>
-                <button onClick={() => document.getElementById('profile-form')?.scrollIntoView({ behavior: 'smooth' })}>Profile & links</button>
-                <button onClick={() => document.getElementById('manage-services')?.scrollIntoView({ behavior: 'smooth' })}>Services & pricing</button>
-                <button onClick={() => document.getElementById('manage-appointments')?.scrollIntoView({ behavior: 'smooth' })}>Appointments</button>
+                <button className={adminScreen === 'dashboard' ? 'active' : ''} onClick={() => setAdminScreen('dashboard')}><LayoutDashboard size={16} /> Dashboard</button>
+                <button className={adminScreen === 'appointments' ? 'active' : ''} onClick={() => setAdminScreen('appointments')}><CalendarDays size={16} /> Appointments</button>
+                <button className={adminScreen === 'security' ? 'active' : ''} onClick={() => setAdminScreen('security')}><KeyRound size={16} /> Security</button>
+                {adminScreen === 'dashboard' && <>
+                    <button onClick={() => document.getElementById('profile-form')?.scrollIntoView({ behavior: 'smooth' })}>Profile & links</button>
+                    <button onClick={() => document.getElementById('manage-services')?.scrollIntoView({ behavior: 'smooth' })}>Services & pricing</button>
+                </>}
             </div>
-            <div className="stats">
-                <div><span>Service categories</span><b>{categories.length}</b></div>
-                <div><span>Total services</span><b>{allServices.length}</b></div>
-                <div><span>Appointment requests</span><b>{appointments.filter(item => item.status === 'pending').length}</b></div>
-            </div>
+            {adminScreen === 'dashboard' ? <>
+                <div className="stats">
+                    <div><span>Service categories</span><b>{categories.length}</b></div>
+                    <div><span>Total services</span><b>{allServices.length}</b></div>
+                    <div><span>Priced services</span><b>{allServices.filter(service => service.price !== '').length}</b></div>
+                </div>
             <section className="admin-panel" id="profile-form">
                 <div className="panel-title"><div><h2>Salon profile</h2><p>This information appears on your public website.</p></div></div>
                 <div className="profile-editor">
@@ -365,24 +573,48 @@ function App() {
                     </div>}
                 </div>)}
             </section>
-            <section className="admin-panel" id="manage-appointments">
-                <div className="panel-title"><div><h2>Appointment requests</h2><p>Review new requests and update their status.</p></div></div>
-                {appointments.length === 0 ? <p className="muted">No appointment requests yet.</p> : <div className="appointments-list">
-                    {appointments.map(appointment => <article className="appointment-row" key={appointment._id}>
-                        <div className="appointment-info">
-                            <b>{appointment.customerName}</b>
-                            <a href={`tel:${appointment.phone}`}>{appointment.phone}</a>
-                            <span>{appointment.service}</span>
-                            <time>{new Date(appointment.date).toLocaleString()}</time>
-                            {appointment.notes && <small>{appointment.notes}</small>}
+                <div className="admin-note"><b>Saved to MongoDB:</b> Profile details, service prices, appointments and uploaded photos are stored in your database.</div>
+            </> : adminScreen === 'appointments' ? <>
+                <div className="appointment-stats">
+                    <div><span>Pending</span><b>{appointmentCounts.pending}</b></div>
+                    <div><span>Confirmed</span><b>{appointmentCounts.confirmed}</b></div>
+                    <div><span>Completed</span><b>{appointmentCounts.completed}</b></div>
+                    <div><span>Cancelled</span><b>{appointmentCounts.cancelled}</b></div>
+                </div>
+                <section className="admin-panel">
+                    <div className="panel-title"><div><h2>Appointment requests</h2><p>Update status or delete an appointment.</p></div></div>
+                    {appointmentDateGroups.length === 0 ? <p className="muted">No appointment requests yet.</p> : appointmentDateGroups.map(group => <div className="appointment-date-group" key={group.key}>
+                        <div className="appointment-date-heading"><h3>{group.label}</h3><span>{group.items.length} {group.items.length === 1 ? 'appointment' : 'appointments'}</span></div>
+                        <div className="appointments-list">
+                            {group.items.map(appointment => <article className={`appointment-row ${appointment.status}`} key={appointment._id}>
+                                <div className="appointment-info">
+                                    <b>{appointment.customerName}</b>
+                                    <a href={`tel:${appointment.phone}`}>{appointment.phone}</a>
+                                    <span>{appointment.service}</span>
+                                    <time>{new Date(appointment.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+                                    {appointment.notes && <small>{appointment.notes}</small>}
+                                </div>
+                                <div className="appointment-actions">
+                                    <select aria-label={`Status for ${appointment.customerName}`} value={appointment.status} onChange={event => updateAppointment(appointment._id, event.target.value)}>
+                                        {['pending', 'confirmed', 'completed', 'cancelled'].map(status => <option key={status} value={status}>{status}</option>)}
+                                    </select>
+                                    <button className="icon-btn danger" aria-label={`Delete appointment for ${appointment.customerName}`} onClick={() => deleteAppointment(appointment._id)}><Trash2 size={16} /></button>
+                                </div>
+                            </article>)}
                         </div>
-                        <select aria-label={`Status for ${appointment.customerName}`} value={appointment.status} onChange={event => updateAppointment(appointment._id, event.target.value)}>
-                            {['pending', 'confirmed', 'completed', 'cancelled'].map(status => <option key={status} value={status}>{status}</option>)}
-                        </select>
-                    </article>)}
-                </div>}
-            </section>
-            <div className="admin-note"><b>Saved to MongoDB:</b> Profile details, service prices, appointments and uploaded photos are stored in your database.</div>
+                    </div>)}
+                </section>
+            </> : <>
+                <section className="admin-panel">
+                    <div className="panel-title"><div><h2>Change admin password</h2><p>Your password is stored as a secure hash in the database, never in the frontend or `.env`.</p></div></div>
+                    <form className="password-form" onSubmit={changeAdminPassword}>
+                        <Field label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} required autoComplete="current-password" />
+                        <Field label="New password (at least 12 characters)" type="password" value={newPassword} onChange={setNewPassword} required minLength={12} autoComplete="new-password" />
+                        <Field label="Confirm new password" type="password" value={confirmNewPassword} onChange={setConfirmNewPassword} required minLength={12} autoComplete="new-password" />
+                        <div className="password-form-actions"><button className="primary-btn" type="submit"><KeyRound size={16} /> Change password</button></div>
+                    </form>
+                </section>
+            </>}
         </main> : <>
             <section className="hero" id="home">
                 <div className="hero-copy">
@@ -451,10 +683,18 @@ function App() {
         {!admin && <button className="floating-wa" onClick={() => openBooking()} aria-label="Book an appointment"><CalendarDays size={21} /><span>Book with us</span></button>}
         {!admin && <button
             className="admin-entry"
-            disabled={import.meta.env.PROD}
-            title={import.meta.env.PROD ? 'Admin access is disabled in production.' : undefined}
-            onClick={() => logged ? setAdmin(true) : setModal('login')}
-        >{import.meta.env.PROD ? 'Admin disabled' : 'Admin'}</button>}
+            onClick={openAdmin}
+        >Admin</button>}
+
+        {modal === 'setup' && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setModal(null)}>
+            <form className="modal small-modal" onSubmit={setupAdmin}>
+                <div className="modal-head"><div><span className="eyebrow">FIRST-TIME SETUP</span><h2>Create admin password</h2></div><button type="button" className="icon-btn" onClick={() => setModal(null)}><X /></button></div>
+                <p className="muted">Choose a password with at least 12 characters. It will be stored as a secure hash in your database.</p>
+                <Field label="Admin password" type="password" value={setupPassword} onChange={setSetupPassword} required minLength={12} autoComplete="new-password" />
+                <Field label="Confirm admin password" type="password" value={confirmSetupPassword} onChange={setConfirmSetupPassword} required minLength={12} autoComplete="new-password" />
+                <div className="modal-actions"><button type="button" className="outline-btn" onClick={() => setModal(null)}>Cancel</button><button className="primary-btn" type="submit">Create admin</button></div>
+            </form>
+        </div>}
 
         {modal === 'login' && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setModal(null)}>
             <form className="modal small-modal" onSubmit={login}>
@@ -476,6 +716,7 @@ function App() {
                     </select></div>
                     <Field label="Preferred date & time" type="datetime-local" value={booking.date} onChange={value => setBooking(current => ({ ...current, date: value }))} required />
                     <div className="field full"><label htmlFor="booking-notes">Anything we should know? (optional)</label><textarea id="booking-notes" rows="3" maxLength="1000" value={booking.notes} onChange={event => setBooking(current => ({ ...current, notes: event.target.value }))} /></div>
+                    {(profile.whatsapp || profile.phone) && <p className="booking-whatsapp-note">After submitting, WhatsApp opens with your appointment details. Tap <b>Send</b> to message the salon.</p>}
                 </div>
                 <div className="modal-actions"><button type="button" className="outline-btn" onClick={() => setModal(null)}>Cancel</button><button className="primary-btn" type="submit"><CalendarDays size={16} /> Request booking</button></div>
             </form>
@@ -488,9 +729,9 @@ function App() {
                     <Field label="Service name" value={draft.name} onChange={value => setDraft(current => ({ ...current, name: value }))} />
                     <Field label="Price (INR)" value={draft.price} onChange={value => setDraft(current => ({ ...current, price: value.replace(/[^0-9.]/g, '') }))} placeholder="e.g. 499" />
                     <Field label="Time required (minutes)" type="number" value={draft.time} onChange={value => setDraft(current => ({ ...current, time: value.replace(/\D/g, '') }))} placeholder="e.g. 45" />
-                    <div className="field full"><label htmlFor="service-products">Products used (comma-separated)</label><textarea id="service-products" rows="2" value={(draft.productsUsed || []).join(', ')} onChange={event => setDraft(current => ({ ...current, productsUsed: event.target.value.split(/[,\n]/).map(product => product.trim()).filter(Boolean) }))} placeholder="e.g. cleanser, toner, moisturizer" /></div>
+                    <div className="field full"><label htmlFor="service-products">Products used (comma-separated)</label><textarea id="service-products" rows="2" value={draft.productsUsed} onChange={event => setDraft(current => ({ ...current, productsUsed: event.target.value }))} placeholder="e.g. cleanser, toner, moisturizer" /></div>
                     <div className="field full"><label>Description</label><textarea rows="3" value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} placeholder="Describe what the customer can expect..." /></div>
-                    <div className="field full"><label>Service photo</label><div className="image-upload-preview">{draft.image ? <img src={imageSrc(draft.image)} alt="Service preview" /> : <div><Camera /><span>No image selected</span></div>}{uploadButton('Upload photo', value => setDraft(current => ({ ...current, image: value })))}</div></div>
+                    <div className="field full"><label>Service photo</label><div className="image-upload-preview">{draft.image ? <img src={imageSrc(draft.image)} alt="Service preview" /> : <div><Camera /><span>No image selected</span></div>}{uploadButton('Upload photo', replaceDraftImage)}{draft.image && <button type="button" className="outline-btn remove-photo-btn" onClick={removeDraftImage}><Trash2 size={15} /> Remove photo</button>}</div></div>
                 </div>
                 <div className="modal-actions"><button className="outline-btn" onClick={() => setModal(null)}>Cancel</button><button className="primary-btn" onClick={saveService}><Check size={17} /> Save service</button></div>
             </div>
@@ -511,10 +752,10 @@ function App() {
     </div>;
 }
 
-function Field({ label, value, onChange, placeholder = '', type = 'text', required = false, autoComplete }) {
+function Field({ label, value, onChange, placeholder = '', type = 'text', required = false, autoComplete, minLength }) {
     return <div className="field">
         <label>{label}</label>
-        <input type={type} required={required} autoComplete={autoComplete} value={value ?? ''} onChange={event => onChange(event.target.value)} placeholder={placeholder} />
+        <input type={type} required={required} minLength={minLength} autoComplete={autoComplete} value={value ?? ''} onChange={event => onChange(event.target.value)} placeholder={placeholder} />
     </div>;
 }
 

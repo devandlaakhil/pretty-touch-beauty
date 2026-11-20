@@ -10,13 +10,12 @@ import jwt from 'jsonwebtoken';
 import { defaultCategories, defaultProfile } from '../src/defaults.js';
 
 const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-const requiredEnv = ['MONGODB_URI', 'ADMIN_PASSWORD', 'JWT_SECRET'];
-const activeRequiredEnv = isProduction ? ['MONGODB_URI'] : requiredEnv;
-const missingEnv = activeRequiredEnv.filter(key => !process.env[key] || process.env[key].startsWith('replace-with-') || /<[^>]+>/.test(process.env[key]));
+const requiredEnv = ['MONGODB_URI', 'JWT_SECRET'];
+const missingEnv = requiredEnv.filter(key => !process.env[key] || process.env[key].startsWith('replace-with-') || /<[^>]+>/.test(process.env[key]));
 if (missingEnv.length) {
     throw new Error(`Set the following values in .env before starting the API: ${missingEnv.join(', ')}`);
 }
-if (!isProduction && process.env.JWT_SECRET.length < 32) {
+if (process.env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters long.');
 }
 
@@ -26,7 +25,6 @@ const host = process.env.HOST || '127.0.0.1';
 const cookieName = 'pt_admin';
 const tokenLifetime = '8h';
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const adminPasswordHash = process.env.ADMIN_PASSWORD ? await bcrypt.hash(process.env.ADMIN_PASSWORD, 12) : null;
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -39,6 +37,11 @@ const contentSchema = new mongoose.Schema({
     profile: { type: mongoose.Schema.Types.Mixed, required: true },
     categories: { type: [mongoose.Schema.Types.Mixed], required: true },
     servicesInitialized: { type: Boolean, default: false }
+}, { timestamps: true });
+
+const adminSchema = new mongoose.Schema({
+    _id: { type: String, default: 'primary' },
+    passwordHash: { type: String, required: true }
 }, { timestamps: true });
 
 const serviceSchema = new mongoose.Schema({
@@ -70,6 +73,7 @@ const imageSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Content = mongoose.model('Content', contentSchema);
+const Admin = mongoose.model('Admin', adminSchema);
 const Service = mongoose.model('Service', serviceSchema);
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 const Image = mongoose.model('Image', imageSchema);
@@ -86,7 +90,6 @@ function issueAdminSession(res) {
 }
 
 function isAdmin(req, res, next) {
-    if (isProduction) return res.status(403).json({ error: 'Admin access is disabled in production.' });
     const token = req.cookies[cookieName];
     if (!token) return res.status(401).json({ error: 'Admin login required.' });
     try {
@@ -97,11 +100,6 @@ function isAdmin(req, res, next) {
         res.clearCookie(cookieName, { httpOnly: true, sameSite: 'strict', secure: isProduction });
         res.status(401).json({ error: 'Your admin session has expired. Please sign in again.' });
     }
-}
-
-function adminDisabled(req, res, next) {
-    if (isProduction) return res.status(403).json({ error: 'Admin access is disabled in production.' });
-    next();
 }
 
 function cleanContent(body) {
@@ -226,22 +224,85 @@ app.delete('/api/services/:id', isAdmin, async (req, res, next) => {
 });
 
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
-app.post('/api/auth/login', adminDisabled, loginLimiter, async (req, res) => {
+const setupLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
+const validAdminPassword = password => typeof password === 'string' &&
+    Buffer.byteLength(password, 'utf8') >= 12 && Buffer.byteLength(password, 'utf8') <= 72;
+
+app.get('/api/auth/status', async (req, res, next) => {
+    try {
+        res.json({ configured: Boolean(await Admin.exists({ _id: 'primary' })) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/auth/setup', setupLimiter, async (req, res, next) => {
+    const password = req.body?.password;
+    if (!validAdminPassword(password)) {
+        return res.status(400).json({ error: 'Choose a password between 12 and 72 UTF-8 bytes.' });
+    }
+    try {
+        if (await Admin.exists({ _id: 'primary' })) {
+            return res.status(409).json({ error: 'Admin is already set up. Please sign in.' });
+        }
+        await Admin.create({ _id: 'primary', passwordHash: await bcrypt.hash(password, 12) });
+        issueAdminSession(res);
+        res.status(201).json({ message: 'Admin account created.' });
+    } catch (error) {
+        if (error.code === 11000) return res.status(409).json({ error: 'Admin is already set up. Please sign in.' });
+        next(error);
+    }
+});
+
+app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
     const password = req.body?.password;
     if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') > 72) {
         return res.status(400).json({ error: 'Enter a valid admin password.' });
     }
-    if (!adminPasswordHash || !(await bcrypt.compare(password, adminPasswordHash))) {
-        return res.status(401).json({ error: 'Incorrect admin password.' });
+    try {
+        const administrator = await Admin.findById('primary').select('passwordHash');
+        if (!administrator) return res.status(409).json({ error: 'Admin setup is required before signing in.' });
+        if (!(await bcrypt.compare(password, administrator.passwordHash))) {
+            return res.status(401).json({ error: 'Incorrect admin password.' });
+        }
+        issueAdminSession(res);
+        res.json({ message: 'Signed in.' });
+    } catch (error) {
+        next(error);
     }
-    issueAdminSession(res);
-    res.json({ message: 'Signed in.' });
 });
 
 app.get('/api/auth/me', isAdmin, (req, res) => res.json({ authenticated: true }));
 app.post('/api/auth/logout', (req, res) => {
     res.clearCookie(cookieName, { httpOnly: true, sameSite: 'strict', secure: isProduction, path: '/' });
     res.json({ message: 'Signed out.' });
+});
+
+app.post('/api/auth/password', isAdmin, async (req, res, next) => {
+    const { currentPassword, newPassword } = req.body || {};
+    if (typeof currentPassword !== 'string' || !validAdminPassword(newPassword)) {
+        return res.status(400).json({ error: 'Enter your current password and choose a new password of 12 to 72 UTF-8 bytes.' });
+    }
+    if (currentPassword === newPassword) {
+        return res.status(400).json({ error: 'Your new password must be different from the current password.' });
+    }
+    try {
+        const administrator = await Admin.findById('primary').select('passwordHash');
+        if (!administrator || !(await bcrypt.compare(currentPassword, administrator.passwordHash))) {
+            return res.status(401).json({ error: 'Current password is incorrect.' });
+        }
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        const updated = await Admin.findOneAndUpdate(
+            { _id: 'primary', passwordHash: administrator.passwordHash },
+            { $set: { passwordHash } },
+            { new: true }
+        );
+        if (!updated) return res.status(409).json({ error: 'Password changed in another session. Sign in again.' });
+        issueAdminSession(res);
+        res.json({ message: 'Admin password changed.' });
+    } catch (error) {
+        next(error);
+    }
 });
 
 app.post('/api/images', isAdmin, async (req, res, next) => {
@@ -267,6 +328,25 @@ app.get('/api/images/:id', async (req, res, next) => {
         const data = Buffer.from(image.data);
         res.set({ 'Content-Type': image.contentType, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
         res.end(data);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete('/api/images/:id', isAdmin, async (req, res, next) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid image id.' });
+    const imageUrl = `/api/images/${req.params.id}`;
+    try {
+        const [content, serviceReference] = await Promise.all([
+            Content.findOne({ key: 'salon' }).select('profile.photo profile.cover').lean(),
+            Service.exists({ image: imageUrl })
+        ]);
+        if (content?.profile?.photo === imageUrl || content?.profile?.cover === imageUrl || serviceReference) {
+            return res.status(409).json({ error: 'This image is still used by another part of the site.' });
+        }
+        const deleted = await Image.findByIdAndDelete(req.params.id);
+        if (!deleted) return res.status(404).json({ error: 'Image not found.' });
+        res.status(204).end();
     } catch (error) {
         next(error);
     }
@@ -314,6 +394,17 @@ app.patch('/api/appointments/:id', isAdmin, async (req, res, next) => {
         const appointment = await Appointment.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true, runValidators: true });
         if (!appointment) return res.status(404).json({ error: 'Appointment not found.' });
         res.json(appointment);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete('/api/appointments/:id', isAdmin, async (req, res, next) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid appointment id.' });
+    try {
+        const deleted = await Appointment.findByIdAndDelete(req.params.id);
+        if (!deleted) return res.status(404).json({ error: 'Appointment not found.' });
+        res.status(204).end();
     } catch (error) {
         next(error);
     }
