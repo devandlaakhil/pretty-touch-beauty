@@ -19,6 +19,10 @@ As requested, admin access is disabled in production builds and by the productio
 
 Uploaded images are stored as MongoDB documents and limited to 2 MB per image. Admin sessions use an HTTP-only cookie and expire after eight hours. Protect the database credentials and `.env`, use HTTPS in production, and configure `HOST=0.0.0.0`, `CLIENT_ORIGIN`, and `NODE_ENV=production` for your deployment. For production, route `/api` requests to the Node API and serve the frontend from the same origin (or configure the hosting proxy and CORS origin accordingly). Back up the MongoDB database regularly.
 
+### Deploying to Vercel
+
+The root `api/index.js` function and `vercel.json` rewrite route `/api/*` requests to the Express API. Add `MONGODB_URI` (pointing at `prettyBeaty`) to the Vercel project's Environment Variables; local `.env` values are not automatically uploaded to Vercel. Vercel's production environment keeps admin routes disabled.
+
 ## WhatsApp and Instagram setup
 
 - Enter the WhatsApp number with country code and digits only, for example `919876543210` (India +91).

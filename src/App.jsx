@@ -87,16 +87,18 @@ function App() {
             .catch(error => {
                 if (!cancelled) notify(`Could not load salon data: ${error.message}`);
             });
-        api('/api/auth/me')
-            .then(() => {
-                if (cancelled) return;
-                setLogged(true);
-                setAdmin(true);
-                loadAppointments().catch(error => notify(error.message));
-            })
-            .catch(error => {
-                if (!cancelled && error.status !== 401) notify(error.message);
-            });
+        if (!import.meta.env.PROD) {
+            api('/api/auth/me')
+                .then(() => {
+                    if (cancelled) return;
+                    setLogged(true);
+                    setAdmin(true);
+                    loadAppointments().catch(error => notify(error.message));
+                })
+                .catch(error => {
+                    if (!cancelled && error.status !== 401) notify(error.message);
+                });
+        }
         return () => { cancelled = true; };
     }, []);
 

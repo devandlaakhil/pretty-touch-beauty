@@ -9,23 +9,24 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { defaultCategories, defaultProfile } from '../src/defaults.js';
 
+const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 const requiredEnv = ['MONGODB_URI', 'ADMIN_PASSWORD', 'JWT_SECRET'];
-const missingEnv = requiredEnv.filter(key => !process.env[key] || process.env[key].startsWith('replace-with-') || /<[^>]+>/.test(process.env[key]));
+const activeRequiredEnv = isProduction ? ['MONGODB_URI'] : requiredEnv;
+const missingEnv = activeRequiredEnv.filter(key => !process.env[key] || process.env[key].startsWith('replace-with-') || /<[^>]+>/.test(process.env[key]));
 if (missingEnv.length) {
     throw new Error(`Set the following values in .env before starting the API: ${missingEnv.join(', ')}`);
 }
-if (process.env.JWT_SECRET.length < 32) {
+if (!isProduction && process.env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters long.');
 }
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
 const host = process.env.HOST || '127.0.0.1';
-const isProduction = process.env.NODE_ENV === 'production';
 const cookieName = 'pt_admin';
 const tokenLifetime = '8h';
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const adminPasswordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
+const adminPasswordHash = process.env.ADMIN_PASSWORD ? await bcrypt.hash(process.env.ADMIN_PASSWORD, 12) : null;
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -230,7 +231,7 @@ app.post('/api/auth/login', adminDisabled, loginLimiter, async (req, res) => {
     if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') > 72) {
         return res.status(400).json({ error: 'Enter a valid admin password.' });
     }
-    if (!(await bcrypt.compare(password, adminPasswordHash))) {
+    if (!adminPasswordHash || !(await bcrypt.compare(password, adminPasswordHash))) {
         return res.status(401).json({ error: 'Incorrect admin password.' });
     }
     issueAdminSession(res);
@@ -374,11 +375,15 @@ if (!content.servicesInitialized) {
     );
 }
 
-const server = app.listen(port, host, () => console.log(`Pretty Touch API listening on ${host}:${port}`));
+if (process.env.VERCEL !== '1') {
+    const server = app.listen(port, host, () => console.log(`Pretty Touch API listening on ${host}:${port}`));
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => server.close(async () => {
-        await mongoose.disconnect();
-        process.exit(0);
-    }));
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+        process.on(signal, () => server.close(async () => {
+            await mongoose.disconnect();
+            process.exit(0);
+        }));
+    }
 }
+
+export default app;
